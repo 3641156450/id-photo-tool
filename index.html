@@ -1,0 +1,526 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>证件照自动裁剪与 5 寸排版工具</title>
+<style>
+  :root{
+    --bg:#f3ede1; --panel:#ffffff; --ink:#1c2530; --muted:#6b7682;
+    --accent:#2f6fed; --dark:#101c26; --line:#e4ddcf; --ok:#1f9d55;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{
+    font-family:"Noto Sans SC","PingFang SC","Microsoft YaHei",system-ui,sans-serif;
+    background:var(--bg); color:var(--ink); line-height:1.6; padding:32px 16px 64px;
+    -webkit-tap-highlight-color:transparent;
+    -webkit-text-size-adjust:100%;
+  }
+  .wrap{max-width:920px;margin:0 auto}
+  header h1{font-size:26px;font-weight:700;margin-bottom:6px}
+  header p{color:var(--muted);font-size:14px;margin-bottom:28px}
+  .card{
+    background:var(--panel);border:1px solid var(--line);border-radius:14px;
+    padding:22px;margin-bottom:20px;box-shadow:0 2px 14px rgba(0,0,0,.05);
+  }
+  .step-h{display:flex;align-items:center;gap:10px;font-size:16px;font-weight:600;margin-bottom:14px}
+  .tool-num{
+    display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;
+    background:var(--accent);color:#fff;border-radius:50%;font-size:14px;font-style:normal;flex:none;
+  }
+  /* 上传框 */
+  .upload-box{
+    border:2px dashed #c9bfa9;border-radius:12px;background:#fbf7ef;color:var(--muted);
+    text-align:center;padding:34px 16px;cursor:pointer;transition:.15s;font-size:15px;
+  }
+  .upload-box:hover{border-color:var(--accent);color:var(--accent)}
+  .upload-box.has-img{border-style:solid;border-color:var(--ok);color:var(--ok)}
+  .upload-box small{display:block;margin-top:4px;font-size:12px;opacity:.8}
+  input[type=file]{display:none}
+  /* 规格按钮 */
+  .spec-row{display:flex;gap:12px;flex-wrap:wrap}
+  .spec-btn{
+    flex:1;min-width:200px;text-align:left;border:1px solid var(--line);background:#fff;
+    border-radius:10px;padding:12px 14px;cursor:pointer;font-size:15px;font-weight:600;
+    color:var(--ink);transition:.15s;display:flex;flex-direction:column;gap:2px;
+  }
+  .spec-btn small{font-weight:400;color:var(--muted);font-size:12px}
+  .spec-btn:hover{border-color:var(--accent)}
+  .spec-btn.active{background:var(--accent);border-color:var(--accent);color:#fff}
+  .spec-btn.active small{color:rgba(255,255,255,.85)}
+  /* 裁剪舞台 */
+  .crop-stage{min-height:300px;background:var(--dark);border-radius:12px;display:flex;
+    align-items:center;justify-content:center;padding:16px;flex-direction:column;gap:10px}
+  #interactCanvas{background:#dfe5ea;cursor:grab;touch-action:none;user-select:none;
+    -webkit-user-select:none;-webkit-touch-callout:none;
+    box-shadow:0 4px 18px rgba(0,0,0,.25);max-width:100%;border-radius:4px}
+  #interactCanvas.dragging{cursor:grabbing}
+  .crop-hint{color:#cdd6df;font-size:13px}
+  .zoom-row{display:flex;align-items:center;gap:10px;width:100%;max-width:440px;color:#cdd6df;font-size:13px}
+  .zoom-row input[type=range]{flex:1;accent-color:var(--accent);min-width:90px}
+  .mini-btn{
+    flex:none;border:1px solid rgba(255,255,255,.35);background:rgba(255,255,255,.08);
+    color:#eef3f8;border-radius:8px;padding:6px 12px;font-size:13px;cursor:pointer;
+    font-family:inherit;white-space:nowrap;transition:.15s;
+  }
+  .mini-btn:hover{background:rgba(255,255,255,.18)}
+  .mini-btn:active{transform:scale(.96)}
+  /* 结果区 */
+  .canvas-box{background:#f3ede1;border-radius:10px;padding:12px;display:flex;
+    align-items:center;justify-content:center;min-height:120px}
+  .canvas-box canvas{max-width:100%;height:auto;border-radius:6px;background:#fff;
+    box-shadow:0 2px 10px rgba(0,0,0,.08)}
+  .mini-label{font-size:13px;color:var(--muted);margin:10px 0 4px}
+  .result-grid{display:grid;grid-template-columns:1fr 1fr;gap:20px}
+  /* 移动端适配 */
+  @media(max-width:640px){
+    body{padding:20px 12px 48px}
+    header h1{font-size:21px}
+    header p{font-size:13px;margin-bottom:20px}
+    .card{padding:16px;border-radius:12px;margin-bottom:14px}
+    .crop-stage{padding:10px;min-height:auto}
+    .zoom-row{flex-wrap:wrap;justify-content:center}
+    .spec-btn{min-width:0;width:100%;padding:10px 12px;font-size:14px}
+    .spec-row{gap:8px}
+    .result-grid{grid-template-columns:1fr;gap:14px}
+    .btn{flex:1 1 auto;min-width:calc(50% - 5px);padding:11px 12px;font-size:13.5px}
+    .btn-row{gap:8px}
+    .dl-group h4{font-size:13.5px}
+    .dl-group h4 span{display:block;margin-left:0;margin-top:2px}
+    .tip{font-size:12px}
+  }
+  /* 下载按钮 */
+  .dl-group{border-top:1px dashed var(--line);padding-top:16px;margin-top:6px}
+  .dl-group h4{font-size:14px;margin-bottom:10px;color:var(--ink)}
+  .dl-group h4 span{color:var(--muted);font-weight:400;font-size:12px;margin-left:6px}
+  .btn-row{display:flex;gap:10px;flex-wrap:wrap}
+  .btn{border:none;border-radius:8px;padding:10px 16px;font-size:14px;cursor:pointer;
+    font-weight:600;transition:.15s}
+  .btn:disabled{opacity:.45;cursor:not-allowed}
+  .btn-dark{background:var(--dark);color:#fff}
+  .btn-dark:hover{background:#22323f}
+  .btn-line{background:#fff;border:1px solid var(--line);color:var(--ink)}
+  .btn-line:hover{border-color:var(--accent);color:var(--accent)}
+  .tip{background:#fff8e8;border:1px solid #f0e2bf;color:#7a6321;border-radius:10px;
+    padding:12px 14px;font-size:13px;margin-top:6px}
+  .footer-note{text-align:center;color:var(--muted);font-size:12px;margin-top:24px}
+  /* toast */
+  .toast-wrap{position:fixed;bottom:28px;left:50%;transform:translateX(-50%);z-index:300;
+    display:flex;flex-direction:column;gap:10px;align-items:center}
+  .toast{background:var(--dark);color:#fff;padding:10px 18px;border-radius:24px;font-size:14px;
+    box-shadow:0 6px 20px rgba(0,0,0,.25);animation:fade .3s}
+  @keyframes fade{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>证件照自动裁剪与 5 寸排版工具</h1>
+    <p>上传照片后拖动、缩放自由选择裁剪部位，自动生成一寸或二寸证件照；再按 5 寸照片（8.9 × 12.7cm）画布排版——一寸 9 张、二寸 4 张，带适宜空隙，可直接下载冲印。<b>新增：可单独下载未经 5 寸排版的单张证件照（JPG / PNG，字样随所选规格变化）。</b></p>
+  </header>
+
+  <!-- 步骤 1：上传 -->
+  <div class="card">
+    <div class="step-h"><i class="tool-num">1</i>上传照片</div>
+    <div class="upload-box" id="uploadBox">
+      点击选择或拖入照片<br><small style="color:var(--muted)">支持 jpg / png，建议正面免冠照</small>
+    </div>
+    <input type="file" id="photoInput" accept="image/png,image/jpeg">
+  </div>
+
+  <!-- 步骤 2：选规格 -->
+  <div class="card">
+    <div class="step-h"><i class="tool-num">2</i>选择证件照规格</div>
+    <div class="spec-row">
+      <button class="spec-btn active" data-spec="1">一寸 2.5 × 3.5 cm<small>5 寸画布排 9 张（3 列 × 3 行）</small></button>
+      <button class="spec-btn" data-spec="2">二寸 3.5 × 5.3 cm<small>5 寸画布排 4 张（2 列 × 2 行）</small></button>
+    </div>
+  </div>
+
+  <!-- 步骤 3：拖动缩放 -->
+  <div class="card">
+    <div class="step-h"><i class="tool-num">3</i>拖动与缩放 · 选择裁剪部位</div>
+    <div class="crop-stage">
+      <canvas id="interactCanvas"></canvas>
+      <div class="zoom-row">
+        <span>缩放</span>
+        <input type="range" id="zoomSlider" min="1" max="4" step="0.01" value="1">
+        <button class="mini-btn" id="fitBtn" type="button">重置构图</button>
+      </div>
+      <div class="crop-hint">拖动照片调整位置 · 双指 / 滚轮 / 滑块缩放 · 双击或点「重置构图」复位</div>
+    </div>
+  </div>
+
+  <!-- 步骤 4：结果 + 下载 -->
+  <div class="card">
+    <div class="step-h"><i class="tool-num">4</i>裁剪结果 · 5 寸排版自动更新</div>
+    <div class="result-grid">
+      <div>
+        <div class="canvas-box"><canvas id="cropCanvas"></canvas></div>
+        <div class="mini-label">单张证件照（300DPI）· 还没排版</div>
+      </div>
+      <div>
+        <div class="canvas-box"><canvas id="sheetCanvas"></canvas></div>
+        <div class="mini-label">5 寸画布排版 · 随裁剪实时更新</div>
+      </div>
+    </div>
+
+    <!-- 新增：下载还没排版的照片（jpg/png），字样随规格切换 -->
+    <div class="dl-group">
+      <h4>下载<span id="dlSpecTitle">一寸</span>照片 <span>即未经 5 寸排版的单张证件照，JPG 体积更小 / PNG 无损</span></h4>
+      <div class="btn-row">
+        <button class="btn btn-line" id="dlSinglePng" disabled>下载一寸照片 · PNG</button>
+        <button class="btn btn-line" id="dlSingleJpg" disabled>下载一寸照片 · JPG</button>
+      </div>
+    </div>
+
+    <!-- 原有：下载 5 寸排版图 -->
+    <div class="dl-group">
+      <h4>下载 5 寸排版图 <span>冲印用，JPG 体积更小 / PNG 无损</span></h4>
+      <div class="btn-row">
+        <button class="btn btn-dark" id="downloadPng" disabled>下载排版 · PNG</button>
+        <button class="btn btn-dark" id="downloadJpg" disabled>下载排版 · JPG</button>
+        <button class="btn btn-line" id="resetBtn">重新选择照片</button>
+      </div>
+    </div>
+
+    <div class="tip">排版规范：基于 300DPI 输出（一寸 295 × 413px、二寸 413 × 626px，5 寸画布 1051 × 1500px），空隙由程序按行列数自动均分，无需手动调整；支持 PNG / JPG 两种格式下载：PNG 无损清晰、JPG 体积更小，均可直接发送冲印店。</div>
+  </div>
+
+  <div class="footer-note">本工具为本地运行，照片不会上传到任何服务器。</div>
+</div>
+
+<div class="toast-wrap" id="toastWrap"></div>
+
+<script>
+/* ============ 复刻原站核心逻辑（常量与裁剪/排版数学保持一致） ============ */
+(function(){
+  var photoInput   = document.getElementById("photoInput");
+  var uploadBox    = document.getElementById("uploadBox");
+  var cropCanvas   = document.getElementById("cropCanvas");
+  var sheetCanvas  = document.getElementById("sheetCanvas");
+  var downloadPng  = document.getElementById("downloadPng");
+  var downloadJpg  = document.getElementById("downloadJpg");
+  var resetBtn     = document.getElementById("resetBtn");
+  var zoomSlider   = document.getElementById("zoomSlider");
+  var interactCanvas = document.getElementById("interactCanvas");
+  var fitBtn       = document.getElementById("fitBtn");
+
+  // 新增按钮
+  var dlSinglePng = document.getElementById("dlSinglePng");
+  var dlSingleJpg = document.getElementById("dlSingleJpg");
+  var dlSpecTitle = document.getElementById("dlSpecTitle");
+
+  var DPI = 118.11;  // 300DPI：1cm = 118.11px
+  var SPECS = {
+    1: { label:"一寸", w:Math.round(2.5*DPI), h:Math.round(3.5*DPI), cols:3, rows:3 }, // 2.5×3.5cm
+    2: { label:"二寸", w:Math.round(3.5*DPI), h:Math.round(5.3*DPI), cols:2, rows:2 }  // 3.5×5.3cm
+  };
+  var SHEET_W = Math.round(8.9*DPI), SHEET_H = Math.round(12.7*DPI); // 5 寸画布 8.9×12.7cm
+  var currentSpec = 1, srcImg = null;
+
+  // 交互裁剪状态
+  var CROP_W = 360, CROP_H = 500;                 // 交互画布逻辑尺寸
+  var cropState = { zoom: 1, offX: 0, offY: 0 };  // 缩放比例 + 照片相对画布中心偏移
+
+  // 裁剪框：画布居中，尺寸按证件照规格比例（照片可拖可缩放，框固定）
+  function cropBox(){
+    var spec = SPECS[currentSpec];
+    var bw = 280, bh = Math.round(bw * spec.h / spec.w);
+    return { x:(CROP_W-bw)/2, y:(CROP_H-bh)/2, w:bw, h:bh };
+  }
+  // 客户端拖动像素 → 画布逻辑像素（防止宽度为 0 时除零）
+  function interactScale(){
+    var w = interactCanvas.getBoundingClientRect().width;
+    return w > 0 ? interactCanvas.width / w : 1;
+  }
+
+  // 缩放：围绕照片中心，限制照片必须完全盖住裁剪框
+  function setZoom(nz){
+    var box = cropBox();
+    var minZ = Math.max(box.w / srcImg.width, box.h / srcImg.height); // cover 最小缩放
+    var maxZ = minZ * 4;
+    nz = Math.min(Math.max(nz, minZ), maxZ);
+    cropState.offX += srcImg.width  * (cropState.zoom - nz) / 2;  // 保持照片中心不动
+    cropState.offY += srcImg.height * (cropState.zoom - nz) / 2;
+    cropState.zoom = nz;
+    clampOffset();
+    zoomSlider.value = nz;
+    render();
+  }
+  // 边界限制：照片边缘不进入裁剪框内部
+  function clampOffset(){
+    var box = cropBox();
+    var dw = srcImg.width * cropState.zoom, dh = srcImg.height * cropState.zoom;
+    var cx = CROP_W/2 + cropState.offX, cy = CROP_H/2 + cropState.offY; // 照片左上角
+    var minX = box.x + box.w - dw, maxX = box.x;   // 左不越界 & 右不露白
+    var minY = box.y + box.h - dh, maxY = box.y;
+    if (minX > maxX){ cropState.offX = 0; }
+    else { cx = Math.min(Math.max(cx, minX), maxX); cropState.offX = cx - CROP_W/2; }
+    if (minY > maxY){ cropState.offY = 0; }
+    else { cy = Math.min(Math.max(cy, minY), maxY); cropState.offY = cy - CROP_H/2; }
+  }
+  // 初始化：按规格 cover 填充裁剪框
+  function fitCrop(){
+    if (!srcImg) return;
+    var box = cropBox();
+    var s = Math.max(box.w / srcImg.width, box.h / srcImg.height);
+    cropState.zoom = s; cropState.offX = 0; cropState.offY = 0;
+    zoomSlider.min = s; zoomSlider.max = s * 4;
+    zoomSlider.step = (s * 4 - s) / 200;
+    zoomSlider.value = s;
+    render();
+  }
+  // 交互画布：照片 + 遮罩 + 裁剪框参考线
+  function drawInteract(){
+    if (!srcImg) return;
+    var ctx = interactCanvas.getContext("2d");
+    // 尺寸不变则不重设（避免每帧重分配），下方 fillRect 会整幅覆盖，等效清屏
+    if (interactCanvas.width !== CROP_W) interactCanvas.width = CROP_W;
+    if (interactCanvas.height !== CROP_H) interactCanvas.height = CROP_H;
+    var W = CROP_W, H = CROP_H, box = cropBox();
+    ctx.fillStyle = "#dfe5ea"; ctx.fillRect(0,0,W,H);
+    ctx.save();
+    ctx.beginPath(); ctx.rect(0,0,W,H); ctx.clip();
+    var cx = W/2 + cropState.offX, cy = H/2 + cropState.offY;
+    ctx.drawImage(srcImg, cx, cy, srcImg.width*cropState.zoom, srcImg.height*cropState.zoom);
+    ctx.restore();
+    // 裁剪框外压暗（表示将被裁掉）
+    ctx.fillStyle = "rgba(8,18,28,.55)";
+    ctx.fillRect(0,0,W,box.y);
+    ctx.fillRect(0,box.y+box.h,W,H-box.y-box.h);
+    ctx.fillRect(0,box.y,box.x,box.h);
+    ctx.fillRect(box.x+box.w,box.y,W-box.x-box.w,box.h);
+    // 裁剪框边框 + 井字参考线
+    ctx.strokeStyle = "#fff"; ctx.lineWidth = 2;
+    ctx.strokeRect(box.x,box.y,box.w,box.h);
+    ctx.strokeStyle = "rgba(255,255,255,.3)"; ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(box.x+box.w/3,box.y); ctx.lineTo(box.x+box.w/3,box.y+box.h);
+    ctx.moveTo(box.x+box.w*2/3,box.y); ctx.lineTo(box.x+box.w*2/3,box.y+box.h);
+    ctx.moveTo(box.x,box.y+box.h/3); ctx.lineTo(box.x+box.w,box.y+box.h/3);
+    ctx.moveTo(box.x,box.y+box.h*2/3); ctx.lineTo(box.x+box.w,box.y+box.h*2/3);
+    ctx.stroke();
+  }
+  // 5 寸排版：按行列均分空隙，循环绘制每张证件照（复用离屏画布，避免每帧重分配）
+  var sheetBuf = null;
+  function layoutSheet(photo, spec){
+    if (!sheetBuf) sheetBuf = document.createElement("canvas");
+    var c = sheetBuf;
+    if (c.width !== SHEET_W) c.width = SHEET_W;
+    if (c.height !== SHEET_H) c.height = SHEET_H;
+    var ctx = c.getContext("2d");
+    ctx.fillStyle = "#fff"; ctx.fillRect(0,0,SHEET_W,SHEET_H); // 白底（同时覆盖上一帧）
+    var px = (SHEET_W - spec.w*spec.cols) / (spec.cols+1);    // 水平空隙
+    var py = (SHEET_H - spec.h*spec.rows) / (spec.rows+1);    // 垂直空隙
+    for (var r=0; r<spec.rows; r++)
+      for (var col=0; col<spec.cols; col++)
+        ctx.drawImage(photo, px+col*(spec.w+px), py+r*(spec.h+py), spec.w, spec.h);
+    return c;
+  }
+  // 渲染：裁剪框区域映射回照片坐标 → 单张证件照 → 5 寸排版（实时联动）
+  function render(){
+    if (!srcImg) return;
+    var spec = SPECS[currentSpec];
+    var box = cropBox();
+    var sx = (box.x - CROP_W/2 - cropState.offX) / cropState.zoom; // 裁剪源左上角
+    var sy = (box.y - CROP_H/2 - cropState.offY) / cropState.zoom;
+    var sw = box.w / cropState.zoom, sh = box.h / cropState.zoom;
+    // 仅尺寸变化时重设（重设会清屏）；drawImage 覆盖整幅，等效清屏
+    if (cropCanvas.width !== spec.w) cropCanvas.width = spec.w;
+    if (cropCanvas.height !== spec.h) cropCanvas.height = spec.h;
+    cropCanvas.getContext("2d").drawImage(srcImg, sx, sy, sw, sh, 0, 0, spec.w, spec.h);
+    var sheet = layoutSheet(cropCanvas, spec);
+    if (sheetCanvas.width !== sheet.width) sheetCanvas.width = sheet.width;
+    if (sheetCanvas.height !== sheet.height) sheetCanvas.height = sheet.height;
+    sheetCanvas.getContext("2d").drawImage(sheet, 0, 0);
+    drawInteract();
+  }
+
+  /* ============ 上传：点击 / 拖拽 / 文件选择 ============ */
+  uploadBox.addEventListener("click", function(){ photoInput.click(); });
+  uploadBox.addEventListener("dragover", function(e){ e.preventDefault(); });
+  uploadBox.addEventListener("drop", function(e){
+    e.preventDefault();
+    if (e.dataTransfer.files[0]) loadFile(e.dataTransfer.files[0]);
+  });
+  photoInput.addEventListener("change", function(){
+    if (photoInput.files[0]) loadFile(photoInput.files[0]);
+    photoInput.value = ""; // 清空以便重复选择同一个文件也能触发
+  });
+  function loadFile(file){
+    if (!/image\//.test(file.type)){ toast("请选择图片文件"); return; }
+    var fr = new FileReader();
+    fr.onload = function(){
+      var img = new Image();
+      img.onload = function(){
+        srcImg = img;
+        uploadBox.classList.add("has-img");
+        uploadBox.innerHTML = "已选择照片，可点击更换";
+        // 启用所有下载按钮
+        [downloadPng,downloadJpg,dlSinglePng,dlSingleJpg].forEach(function(b){b.disabled=false;});
+        fitCrop();
+      };
+      img.src = fr.result;
+    };
+    fr.readAsDataURL(file);
+  }
+
+  /* ============ 规格切换（同步更新下载按钮字样） ============ */
+  function updateSpecLabels(){
+    var label = SPECS[currentSpec].label; // "一寸" / "二寸"
+    dlSpecTitle.textContent = label;
+    dlSinglePng.textContent = "下载" + label + "照片 · PNG";
+    dlSingleJpg.textContent = "下载" + label + "照片 · JPG";
+  }
+  document.querySelectorAll(".spec-btn").forEach(function(b){
+    b.addEventListener("click", function(){
+      document.querySelectorAll(".spec-btn").forEach(function(x){ x.classList.remove("active"); });
+      b.classList.add("active");
+      currentSpec = +b.getAttribute("data-spec");
+      updateSpecLabels();
+      fitCrop();
+    });
+  });
+
+  /* ============ 交互：拖动照片（鼠标 / 触屏 / 双指缩放）============ */
+  var dragState = null, touchState = null, pinchState = null, touchActive = false;
+
+  // 双指间距
+  function touchDist(t){
+    var dx = t[0].clientX - t[1].clientX, dy = t[0].clientY - t[1].clientY;
+    return Math.sqrt(dx*dx + dy*dy);
+  }
+
+  // —— 鼠标 ——
+  interactCanvas.addEventListener("mousedown", function(e){
+    if (!srcImg || touchActive) return;
+    e.preventDefault();
+    dragState = { x:e.clientX, y:e.clientY };
+    interactCanvas.classList.add("dragging");
+  });
+  window.addEventListener("mousemove", function(e){
+    if (!dragState || !srcImg || touchActive) return;
+    var k = interactScale();
+    cropState.offX += (e.clientX - dragState.x) * k;
+    cropState.offY += (e.clientY - dragState.y) * k;
+    dragState.x = e.clientX; dragState.y = e.clientY;
+    clampOffset(); render();
+  });
+  window.addEventListener("mouseup", function(){
+    if (!dragState) return;
+    dragState = null; interactCanvas.classList.remove("dragging");
+  });
+
+  // —— 触摸：单指拖动 / 双指缩放 ——
+  interactCanvas.addEventListener("touchstart", function(e){
+    if (!srcImg) return;
+    touchActive = true;
+    if (e.touches.length === 1){
+      pinchState = null;
+      touchState = { x:e.touches[0].clientX, y:e.touches[0].clientY };
+    } else if (e.touches.length >= 2){
+      touchState = null;
+      pinchState = { dist: touchDist(e.touches), zoom: cropState.zoom };
+    }
+  }, {passive:false});
+  interactCanvas.addEventListener("touchmove", function(e){
+    if (!srcImg) return;
+    if (e.touches.length >= 2 && pinchState){
+      e.preventDefault();
+      var d = touchDist(e.touches);
+      if (pinchState.dist > 0) setZoom(pinchState.zoom * (d / pinchState.dist));
+      return;
+    }
+    if (touchState && e.touches.length === 1){
+      e.preventDefault();
+      var k = interactScale();
+      cropState.offX += (e.touches[0].clientX - touchState.x) * k;
+      cropState.offY += (e.touches[0].clientY - touchState.y) * k;
+      touchState.x = e.touches[0].clientX; touchState.y = e.touches[0].clientY;
+      clampOffset(); render();
+    }
+  }, {passive:false});
+  interactCanvas.addEventListener("touchend", function(e){
+    if (e.touches.length === 0){
+      touchState = null; pinchState = null;
+      interactCanvas.classList.remove("dragging");
+      // 延迟关闭 touchActive，避免随后触发的合成鼠标事件被重复处理
+      setTimeout(function(){ touchActive = false; }, 400);
+    } else if (e.touches.length === 1){
+      pinchState = null;
+      touchState = { x:e.touches[0].clientX, y:e.touches[0].clientY };
+    }
+  });
+  interactCanvas.addEventListener("touchcancel", function(){
+    touchState = null; pinchState = null; touchActive = false;
+    interactCanvas.classList.remove("dragging");
+  });
+
+  /* ============ 交互：滚轮缩放 / 滑块缩放 / 双击或按钮重置 ============ */
+  interactCanvas.addEventListener("wheel", function(e){
+    if (!srcImg) return;
+    e.preventDefault();
+    setZoom(cropState.zoom * (e.deltaY < 0 ? 1.1 : 1/1.1));
+  }, {passive:false});
+  zoomSlider.addEventListener("input", function(){ if (srcImg) setZoom(+zoomSlider.value); });
+  interactCanvas.addEventListener("dblclick", function(){ if (srcImg) fitCrop(); });
+  fitBtn.addEventListener("click", function(){ if (srcImg) fitCrop(); else toast("请先上传照片"); });
+
+  /* ============ 下载：通用导出 ============ */
+  function exportCanvas(canvas, mime, ext, filename){
+    canvas.toBlob(function(blob){
+      if (!blob){ toast("导出失败，请重试"); return; }
+      var a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = filename;
+      a.click();
+      setTimeout(function(){ URL.revokeObjectURL(a.href); }, 3000);
+      toast("已生成 " + ext.toUpperCase() + "：" + filename);
+    }, mime, mime === "image/jpeg" ? 0.92 : undefined);
+  }
+
+  // 下载 5 寸排版图（原有功能）
+  function downloadSheet(fmt){
+    if (!srcImg){ toast("请先上传照片"); return; }
+    var mime = fmt === "jpg" ? "image/jpeg" : "image/png";
+    var ext  = fmt === "jpg" ? "jpg" : "png";
+    exportCanvas(sheetCanvas, mime, ext, "证件照" + SPECS[currentSpec].label + "5寸排版." + ext);
+  }
+  downloadPng.addEventListener("click", function(){ downloadSheet("png"); });
+  downloadJpg.addEventListener("click", function(){ downloadSheet("jpg"); });
+
+  /* ===== 新增功能：下载「还没排版」的单张证件照（jpg/png，字样随规格变化） ===== */
+  // 直接导出 cropCanvas（已裁剪、未放进 5 寸排版的那张）
+  function downloadSingle(fmt){
+    if (!srcImg){ toast("请先上传照片"); return; }
+    var mime = fmt === "jpg" ? "image/jpeg" : "image/png";
+    var ext  = fmt === "jpg" ? "jpg" : "png";
+    exportCanvas(cropCanvas, mime, ext, SPECS[currentSpec].label + "证件照." + ext);
+  }
+  dlSinglePng.addEventListener("click", function(){ downloadSingle("png"); });
+  dlSingleJpg.addEventListener("click", function(){ downloadSingle("jpg"); });
+
+  /* ============ 重置 ============ */
+  resetBtn.addEventListener("click", function(){
+    srcImg = null; photoInput.value = "";
+    uploadBox.classList.remove("has-img");
+    uploadBox.innerHTML = '点击选择或拖入照片<br><small style="color:var(--muted)">支持 jpg / png，建议正面免冠照</small>';
+    [downloadPng,downloadJpg,dlSinglePng,dlSingleJpg].forEach(function(b){b.disabled=true;});
+    cropCanvas.width = 0; cropCanvas.height = 0;
+    sheetCanvas.width = 0; sheetCanvas.height = 0;
+    interactCanvas.width = 0; interactCanvas.height = 0;
+  });
+
+  /* ============ toast ============ */
+  function toast(msg){
+    var wrap = document.getElementById("toastWrap");
+    var t = document.createElement("div");
+    t.className = "toast"; t.textContent = msg;
+    wrap.appendChild(t);
+    setTimeout(function(){ t.remove(); }, 2200);
+  }
+})();
+</script>
+</body>
+</html>
