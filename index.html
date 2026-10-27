@@ -150,7 +150,6 @@
   .warn{background:var(--warnbg);border:1px solid var(--warnline);color:var(--warn);border-radius:10px;
     padding:10px 14px;font-size:13px;margin-top:8px}
   .warn.hidden{display:none}
-  .footer-note{text-align:center;color:var(--muted);font-size:12px;margin-top:24px}
   /* toast */
   .toast-wrap{position:fixed;bottom:28px;left:50%;transform:translateX(-50%);z-index:300;
     display:flex;flex-direction:column;gap:10px;align-items:center}
@@ -169,7 +168,7 @@
   <div class="card">
     <div class="step-h"><i class="tool-num">1</i>上传照片</div>
     <div class="upload-box" id="uploadBox">
-      点击选择或拖入照片<br><small style="color:var(--muted)">支持 jpg / png / webp，以及 CR2 等相机 RAW（自动转 sRGB，不发暗）</small>
+      点击选择或拖入照片
     </div>
     <input type="file" id="photoInput" accept="image/png,image/jpeg,image/webp,.cr2,.cr3,.nef,.nrw,.arw,.dng,.raf,.orf,.rw2,.pef,.srw,.iii,.mos,.erf,.kdc,.dcr,.mrw">
   </div>
@@ -205,7 +204,7 @@
         <button class="mini-btn" id="rotRightBtn" type="button">↻ 右转 90°</button>
         <button class="mini-btn" id="rot180Btn" type="button">⇅ 旋转 180°</button>
       </div>
-      <div class="crop-hint">拖动照片调整位置 · 双指 / 滚轮 / 滑块缩放 · 双击或点「重置构图」复位<br>虚线为构图参考：横线≈眼睛高度，竖线为面部中轴</div>
+      <div class="crop-hint">拖动调整 · 滚轮 / 双指缩放 · 双击复位</div>
     </div>
     <div class="field-row">
       <div class="field" id="brightField">
@@ -234,32 +233,34 @@
       </div>
       <div>
         <div class="canvas-box"><canvas id="sheetCanvas"></canvas></div>
-        <div class="mini-label">排版图 · 随裁剪实时更新</div>
+        <div class="mini-label">排版图</div>
         <div class="stat" id="sheetStat"></div>
       </div>
     </div>
 
     <div class="dl-group">
-      <h4>下载<span id="dlSpecTitle">25 × 35mm</span>单张 <span>JPG / PNG</span></h4>
+      <h4>下载<span id="dlSpecTitle">25 × 35mm</span>单张 <span>JPG / PNG / TIFF / BMP</span></h4>
       <div class="btn-row">
-        <button class="btn btn-line" id="dlSinglePng" disabled>下载单张 · PNG</button>
         <button class="btn btn-line" id="dlSingleJpg" disabled>下载单张 · JPG</button>
+        <button class="btn btn-line" id="dlSinglePng" disabled>下载单张 · PNG</button>
+        <button class="btn btn-line" id="dlSingleTiff" disabled>下载单张 · TIFF</button>
+        <button class="btn btn-line" id="dlSingleBmp" disabled>下载单张 · BMP</button>
       </div>
     </div>
 
     <div class="dl-group">
-      <h4>下载<span id="dlSheetTitle">5 寸</span>排版图 <span>JPG / PNG</span></h4>
+      <h4>下载<span id="dlSheetTitle">5 寸</span>排版图 <span>JPG / PNG / TIFF / BMP</span></h4>
       <div class="btn-row">
-        <button class="btn btn-dark" id="downloadPng" disabled>下载排版 · PNG</button>
         <button class="btn btn-dark" id="downloadJpg" disabled>下载排版 · JPG</button>
+        <button class="btn btn-dark" id="downloadPng" disabled>下载排版 · PNG</button>
+        <button class="btn btn-dark" id="downloadTiff" disabled>下载排版 · TIFF</button>
+        <button class="btn btn-dark" id="downloadBmp" disabled>下载排版 · BMP</button>
         <button class="btn btn-line" id="resetBtn">重新选择照片</button>
       </div>
     </div>
 
     <div class="warn hidden" id="qualityWarn"></div>
   </div>
-
-  <div class="footer-note">本工具为纯前端本地运行，照片不会上传到任何服务器。</div>
 </div>
 
 <div class="toast-wrap" id="toastWrap"></div>
@@ -307,8 +308,14 @@
       singleBox=$("singleBox"), singleLabel=$("singleLabel"), singleStat=$("singleStat"),
       sheetStat=$("sheetStat"), sheetNote=$("sheetNote"), qualityWarn=$("qualityWarn"),
       dlSpecTitle=$("dlSpecTitle"), dlSheetTitle=$("dlSheetTitle"),
-      btnDlSheetPng=$("downloadPng"), btnDlSheetJpg=$("downloadJpg"),
-      btnDlSinglePng=$("dlSinglePng"), btnDlSingleJpg=$("dlSingleJpg"), resetBtn=$("resetBtn");
+      btnDlSheetJpg=$("downloadJpg"), btnDlSheetPng=$("downloadPng"),
+      btnDlSheetTiff=$("downloadTiff"), btnDlSheetBmp=$("downloadBmp"),
+      btnDlSingleJpg=$("dlSingleJpg"), btnDlSinglePng=$("dlSinglePng"),
+      btnDlSingleTiff=$("dlSingleTiff"), btnDlSingleBmp=$("dlSingleBmp"),
+      resetBtn=$("resetBtn");
+  var DL_BUTTONS = [btnDlSheetJpg, btnDlSheetPng, btnDlSheetTiff, btnDlSheetBmp,
+                    btnDlSingleJpg, btnDlSinglePng, btnDlSingleTiff, btnDlSingleBmp];
+  function setDlEnabled(on){ DL_BUTTONS.forEach(function(b){ b.disabled = !on; }); }
 
   /* ---------- 运行状态 ---------- */
   var srcImg = null;        // 原图（canvas，可能已降采样）
@@ -414,7 +421,7 @@
     if(minX > maxX) state.offX = 0; else { cx = Math.min(Math.max(cx,minX),maxX); state.offX = cx - CROP_W/2; }
     if(minY > maxY) state.offY = 0; else { cy = Math.min(Math.max(cy,minY),maxY); state.offY = cy - CROP_H/2; }
   }
-  function setZoom(nz){
+  function setZoom(nz, light){
     if(!srcImg) return;
     var mz = minZoom();
     nz = Math.min(Math.max(nz, mz), mz*4);
@@ -423,7 +430,7 @@
     state.zoom = nz;
     clampOffset();
     zoomSlider.value = nz;
-    render();
+    scheduleRender(!!light);      // 连续缩放先只画裁剪区，交互结束再补排版
   }
   function fitCrop(){
     if(!srcImg) return;
@@ -587,6 +594,12 @@
     if(rafId) return;
     rafId = requestAnimationFrame(function(){ rafId = null; render(rafLight); rafLight = true; });
   }
+  // 连续交互（滚轮缩放等）停止后补一次含排版的全量渲染
+  var fullTimer = null;
+  function renderSoonFull(){
+    if(fullTimer) clearTimeout(fullTimer);
+    fullTimer = setTimeout(function(){ fullTimer = null; render(); }, 140);
+  }
   function render(skipSheet){
     if(!srcImg) return;
     var spec = currentSpec();
@@ -635,8 +648,6 @@
   function updateLabels(){
     var spec = currentSpec();
     dlSpecTitle.textContent = spec.size;
-    btnDlSinglePng.textContent = "下载单张 · PNG";
-    btnDlSingleJpg.textContent = "下载单张 · JPG";
     dlSheetTitle.textContent = currentSheet().label;
     singleLabel.textContent = "单张 " + spec.size + "（300DPI）";
   }
@@ -660,7 +671,9 @@
       decodeRaw(file);
       return;
     }
-    if(!/^image\//.test(file.type)){ toast("请选择 jpg / png / webp 图片，或 CR2 等相机 RAW"); return; }
+    if(!/^image\//.test(file.type) && !/\.(jpe?g|png|webp|gif|bmp)$/i.test(name)){
+      toast("请选择 jpg / png / webp 图片，或 CR2 等相机 RAW"); return;
+    }
     var fr = new FileReader();
     fr.onload = function(){
       var img = new Image();
@@ -683,7 +696,7 @@
         state.rot = 0; rotSlider.value = 0; rotVal.textContent = "0°";
         uploadBox.classList.add("has-img");
         uploadBox.innerHTML = "已选择照片，可点击更换<br><small>" + file.name + " · " + W + " × " + H + "px</small>";
-        [btnDlSheetPng, btnDlSheetJpg, btnDlSinglePng, btnDlSingleJpg].forEach(function(b){ b.disabled = false; });
+        setDlEnabled(true);
         fitCrop();
       };
       img.onerror = function(){ toast("图片解析失败，换一张试试"); };
@@ -694,25 +707,36 @@
 
   /* ---------- RAW（CR2 等）解码 ---------- */
   function withTimeout(p, ms, msg){
-    return Promise.race([
-      p,
-      new Promise(function(_, rej){ setTimeout(function(){ rej(new Error(msg)); }, ms); })
-    ]);
+    var tid;
+    var timer = new Promise(function(_, rej){ tid = setTimeout(function(){ rej(new Error(msg)); }, ms); });
+    return Promise.race([p, timer]).finally(function(){ clearTimeout(tid); });
   }
   // RAW 本质是拜耳马赛克 + 线性数据，必须走 LibRaw 的 dcraw_process
   // （去黑电平 → 白平衡 → 反马赛克 → 线性转 sRGB 伽马）才能正常显示，
   // 直接当 RGB 截就会发黑——这一步就是补上 PS 打开 CR2 时自动做的那套处理。
+  var rawLibPromise = null, rawLibReady = false, rawDecoding = false;
+  function loadRawLib(){
+    if(!rawLibPromise){
+      rawLibPromise = import("./libraw/index.js").then(
+        function(m){ rawLibReady = true; return m; },
+        function(err){ rawLibPromise = null; throw err; }
+      );
+    }
+    return rawLibPromise;
+  }
   async function decodeRaw(file){
+    if(rawDecoding){ toast("正在解码上一张，请稍候"); return; }
     if(!file || !file.size){ toast("文件为空，无法解码"); return; }
-    toast("正在加载 RAW 解码库…");
+    if(!rawLibReady) toast("正在加载 RAW 解码库…");
     var LibRawMod;
     try {
-      LibRawMod = await import("./libraw/index.js");
+      LibRawMod = await loadRawLib();
     } catch(err){
       toast("RAW 解码库加载失败：请通过 https（线上地址）打开本页，或先将相机文件导出为 JPG/PNG");
       return;
     }
     toast("正在解码 " + file.name + " …");
+    rawDecoding = true;
     var raw = null;
     try {
       var buf = await file.arrayBuffer();
@@ -742,11 +766,12 @@
       state.rot = 0; rotSlider.value = 0; rotVal.textContent = "0°";
       uploadBox.classList.add("has-img");
       uploadBox.innerHTML = "已选择照片，可点击更换<br><small>" + file.name + " · " + W + " × " + H + "px（RAW 已转 sRGB）</small>";
-      [btnDlSheetPng, btnDlSheetJpg, btnDlSinglePng, btnDlSingleJpg].forEach(function(b){ b.disabled = false; });
+      setDlEnabled(true);
       fitCrop();
     } catch(err){
       toast("RAW 解码失败：" + (err && err.message ? err.message : err) + "（可先用相机/PS 导出 JPG/PNG 再上传）");
     } finally {
+      rawDecoding = false;
       try { if(raw) raw.dispose(); } catch(e){}
     }
   }
@@ -795,18 +820,19 @@
   });
   [cwInput, chInput].forEach(function(el){ el.addEventListener("input", updateCustomPx); });
 
-  zoomSlider.addEventListener("input", function(){ if(srcImg) setZoom(+zoomSlider.value); });
+  zoomSlider.addEventListener("input", function(){ if(srcImg) setZoom(+zoomSlider.value, true); });
+  zoomSlider.addEventListener("change", function(){ if(srcImg) render(); });
   rotSlider.addEventListener("input", function(){
     state.rot = +rotSlider.value * Math.PI / 180;
     rotVal.textContent = (+rotSlider.value).toFixed(1) + "°";
-    clampOffset(); render(true);
+    clampOffset(); scheduleRender(true);
   });
   rotSlider.addEventListener("change", function(){ clampOffset(); render(); savePref(); });
   brSlider.addEventListener("input", function(){
-    state.brightness = +brSlider.value; brVal.textContent = state.brightness + "%"; render();
+    state.brightness = +brSlider.value; brVal.textContent = state.brightness + "%"; scheduleRender(false);
   });
   ctSlider.addEventListener("input", function(){
-    state.contrast = +ctSlider.value; ctVal.textContent = state.contrast + "%"; render();
+    state.contrast = +ctSlider.value; ctVal.textContent = state.contrast + "%"; scheduleRender(false);
   });
   [brSlider, ctSlider].forEach(function(el){ el.addEventListener("change", savePref); });
   fitBtn.addEventListener("click", function(){
@@ -858,7 +884,7 @@
     pointers[e.pointerId] = { x:e.clientX, y:e.clientY };
     if(pinchState && pointerCount() >= 2){
       var t = twoPointers();
-      if(t && t.dist > 0) setZoom(pinchState.zoom * (t.dist / pinchState.dist));
+      if(t && t.dist > 0) setZoom(pinchState.zoom * (t.dist / pinchState.dist), true);
       return;
     }
     if(dragState){
@@ -885,7 +911,8 @@
   interactCanvas.addEventListener("wheel", function(e){
     if(!srcImg) return;
     e.preventDefault();
-    setZoom(state.zoom * (e.deltaY < 0 ? 1.1 : 1/1.1));
+    setZoom(state.zoom * (e.deltaY < 0 ? 1.1 : 1/1.1), true);
+    renderSoonFull();
   }, {passive:false});
   interactCanvas.addEventListener("keydown", function(e){
     if(!srcImg) return;
@@ -894,32 +921,156 @@
     else if(e.key === "ArrowRight") state.offX += step;
     else if(e.key === "ArrowUp")    state.offY -= step;
     else if(e.key === "ArrowDown")  state.offY += step;
-    else if(e.key === "+" || e.key === "=") setZoom(state.zoom * 1.05);
-    else if(e.key === "-" || e.key === "_") setZoom(state.zoom / 1.05);
+    else if(e.key === "+" || e.key === "=") setZoom(state.zoom * 1.05, true);
+    else if(e.key === "-" || e.key === "_") setZoom(state.zoom / 1.05, true);
     else used = false;
     if(used){ e.preventDefault(); clampOffset(); render(); }
   });
 
-  /* ---------- 下载 ---------- */
+  /* ---------- 下载（照相馆 / 冲印常用格式，全部写入 300DPI 元数据） ---------- */
   function fmtSize(n){ return n > 1048576 ? (n/1048576).toFixed(2) + " MB" : Math.round(n/1024) + " KB"; }
-  function exportCanvas(canvas, mime, ext, filename){
-    var out = canvas;
-    if(mime === "image/jpeg"){         // JPEG 无 alpha：先垫白底
-      var t = newCanvas(canvas.width, canvas.height);
-      var tc = t.getContext("2d");
-      tc.fillStyle = "#fff"; tc.fillRect(0,0,t.width,t.height);
-      tc.drawImage(canvas, 0, 0);
-      out = t;
+  var DPI = 300;
+  function matteCanvas(canvas){
+    var t = newCanvas(canvas.width, canvas.height);
+    var tc = t.getContext("2d");
+    tc.fillStyle = "#fff"; tc.fillRect(0,0,t.width,t.height);
+    tc.drawImage(canvas, 0, 0);
+    return t;
+  }
+  // ---- PNG：在 IHDR 后插入 pHYs chunk（px per meter）----
+  var CRC_TABLE = (function(){
+    var t = [], c, n, k;
+    for(n = 0; n < 256; n++){ c = n; for(k = 0; k < 8; k++) c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1); t[n] = c >>> 0; }
+    return t;
+  })();
+  function crc32(bytes, start, len){
+    var c = 0xFFFFFFFF;
+    for(var i = start; i < start + len; i++) c = CRC_TABLE[(c ^ bytes[i]) & 0xFF] ^ (c >>> 8);
+    return (c ^ 0xFFFFFFFF) >>> 0;
+  }
+  function u32be(arr, pos, v){ arr[pos] = (v>>>24)&255; arr[pos+1] = (v>>>16)&255; arr[pos+2] = (v>>>8)&255; arr[pos+3] = v&255; }
+  function setPngDpi(u8){
+    // IHDR chunk 固定 25 字节（len4+type4+data13+crc4），从偏移 8 开始
+    var ppm = Math.round(DPI / 0.0254);   // 11811 px/m ≈ 300DPI
+    var chunk = new Uint8Array(21);       // len4 + "pHYs" + 9 + crc4
+    u32be(chunk, 0, 9);
+    chunk[4]=0x70; chunk[5]=0x48; chunk[6]=0x59; chunk[7]=0x73;  // pHYs
+    u32be(chunk, 8, ppm); u32be(chunk, 12, ppm); chunk[16] = 1;  // unit = meter
+    u32be(chunk, 17, crc32(chunk, 4, 13));
+    var out = new Uint8Array(u8.length + 21);
+    out.set(u8.subarray(0, 33), 0);
+    out.set(chunk, 33);
+    out.set(u8.subarray(33), 54);
+    return out;
+  }
+  // ---- JPG：改写 JFIF APP0 的密度字段为 300 DPI ----
+  function setJpgDpi(u8){
+    if(u8.length > 18 && u8[2] === 0xFF && u8[3] === 0xE0 &&
+       u8[6] === 0x4A && u8[7] === 0x46 && u8[8] === 0x49 && u8[9] === 0x46 && u8[10] === 0){
+      u8[13] = 1;                                  // units = dots per inch
+      u8[14] = (DPI >> 8) & 255; u8[15] = DPI & 255;
+      u8[16] = (DPI >> 8) & 255; u8[17] = DPI & 255;
     }
-    out.toBlob(function(blob){
-      if(!blob){ toast("导出失败，请重试"); return; }
+    return u8;
+  }
+  // ---- TIFF：无压缩 baseline RGB，Resolution tag 带 300DPI ----
+  function encodeTIFF(canvas){
+    var w = canvas.width, h = canvas.height;
+    var d = canvas.getContext("2d").getImageData(0, 0, w, h).data;
+    var datalen = w * h * 3;
+    var ifdCount = 12;
+    var ifdOff = 8 + datalen;
+    var extraOff = ifdOff + 2 + ifdCount * 12 + 4;
+    var b = new Uint8Array(extraOff + 22);
+    var dv = new DataView(b.buffer);
+    b[0] = 0x49; b[1] = 0x49;                      // little-endian
+    dv.setUint16(2, 42, true);
+    dv.setUint32(4, ifdOff, true);
+    var p = 8;
+    for(var i = 0; i < w * h; i++){ b[p++] = d[i*4]; b[p++] = d[i*4+1]; b[p++] = d[i*4+2]; }
+    var o = ifdOff;
+    dv.setUint16(o, ifdCount, true); o += 2;
+    function entry(tag, type, count, value){
+      dv.setUint16(o, tag, true); dv.setUint16(o+2, type, true);
+      dv.setUint32(o+4, count, true); dv.setUint32(o+8, value, true); o += 12;
+    }
+    entry(256, 4, 1, w);            // ImageWidth
+    entry(257, 4, 1, h);            // ImageLength
+    entry(258, 3, 3, extraOff);     // BitsPerSample 8,8,8
+    entry(259, 3, 1, 1);            // Compression = none
+    entry(262, 3, 1, 2);            // Photometric = RGB
+    entry(273, 4, 1, 8);            // StripOffsets
+    entry(277, 3, 1, 3);            // SamplesPerPixel
+    entry(278, 4, 1, h);            // RowsPerStrip
+    entry(279, 4, 1, datalen);      // StripByteCounts
+    entry(282, 5, 1, extraOff + 6); // XResolution
+    entry(283, 5, 1, extraOff + 14);// YResolution
+    entry(296, 3, 1, 2);            // ResolutionUnit = inch
+    dv.setUint32(o, 0, true);
+    dv.setUint16(extraOff, 8, true); dv.setUint16(extraOff+2, 8, true); dv.setUint16(extraOff+4, 8, true);
+    dv.setUint32(extraOff+6, DPI, true);  dv.setUint32(extraOff+10, 1, true);
+    dv.setUint32(extraOff+14, DPI, true); dv.setUint32(extraOff+18, 1, true);
+    return b;
+  }
+  // ---- BMP：24 位 bottom-up，ppm 字段带 300DPI ----
+  function encodeBMP(canvas){
+    var w = canvas.width, h = canvas.height;
+    var d = canvas.getContext("2d").getImageData(0, 0, w, h).data;
+    var pad = (4 - (w * 3) % 4) % 4, stride = w * 3 + pad;
+    var total = 54 + stride * h;
+    var b = new Uint8Array(total), dv = new DataView(b.buffer);
+    b[0] = 0x42; b[1] = 0x4D;                       // "BM"
+    dv.setUint32(2, total, true);
+    dv.setUint32(10, 54, true);
+    dv.setUint32(14, 40, true);                     // BITMAPINFOHEADER
+    dv.setInt32(18, w, true); dv.setInt32(22, h, true);
+    dv.setUint16(26, 1, true); dv.setUint16(28, 24, true);
+    dv.setUint32(34, stride * h, true);
+    dv.setInt32(38, Math.round(DPI / 0.0254), true);
+    dv.setInt32(42, Math.round(DPI / 0.0254), true);
+    var p = 54;
+    for(var y = h - 1; y >= 0; y--){
+      var row = y * w * 4;
+      for(var x = 0; x < w; x++){
+        var q = row + x * 4;
+        b[p++] = d[q+2]; b[p++] = d[q+1]; b[p++] = d[q];
+      }
+      p += pad;
+    }
+    return b;
+  }
+  var FORMATS = {
+    jpg:  { mime:"image/jpeg", ext:"jpg",  q:0.92, matte:true, post:setJpgDpi },
+    png:  { mime:"image/png",  ext:"png",  post:setPngDpi },
+    tiff: { mime:"image/tiff", ext:"tiff", matte:true, enc:encodeTIFF },
+    bmp:  { mime:"image/bmp",  ext:"bmp",  matte:true, enc:encodeBMP }
+  };
+  function exportCanvas(canvas, fmt, baseName){
+    var f = FORMATS[fmt];
+    if(!f) return;
+    function save(bytes, size){
       var a = document.createElement("a");
-      a.href = URL.createObjectURL(blob);
-      a.download = filename;
+      a.href = URL.createObjectURL(new Blob([bytes], { type: f.mime }));
+      a.download = baseName + "." + f.ext;
       document.body.appendChild(a); a.click(); a.remove();
       setTimeout(function(){ URL.revokeObjectURL(a.href); }, 4000);
-      toast("已导出 " + ext.toUpperCase() + " · " + fmtSize(blob.size) + "：" + filename);
-    }, mime, mime === "image/jpeg" ? 0.92 : undefined);
+      toast("已导出 " + f.ext.toUpperCase() + " · " + fmtSize(size) + " · 300DPI");
+    }
+    var src = f.matte ? matteCanvas(canvas) : canvas;   // JPG / TIFF / BMP 无 alpha，垫白底
+    if(f.enc){
+      var bytes = f.enc(src);
+      save(bytes, bytes.byteLength);
+    } else {
+      src.toBlob(function(blob){
+        if(!blob){ toast("导出失败，请重试"); return; }
+        blob.arrayBuffer().then(function(buf){
+          if(f.post){
+            try{ buf = f.post(new Uint8Array(buf)); }catch(e){}
+          }
+          save(buf, buf.byteLength);
+        });
+      }, f.mime, f.q);
+    }
   }
   function stamp(){
     var d = new Date(), p = function(n){ return n < 10 ? "0"+n : ""+n; };
@@ -927,29 +1078,29 @@
   }
   function downloadSheet(fmt){
     if(!srcImg){ toast("请先上传照片"); return; }
-    var mime = fmt === "jpg" ? "image/jpeg" : "image/png";
-    var ext  = fmt === "jpg" ? "jpg" : "png";
-    exportCanvas(sheetCanvas, mime, ext,
-      "证件照" + currentSpec().mmw + "x" + currentSpec().mmh + "mm-" + currentSheet().label + "排版-" + stamp() + "." + ext);
+    var s = currentSpec();
+    exportCanvas(sheetCanvas, fmt, "证件照" + s.mmw + "x" + s.mmh + "mm-" + currentSheet().label + "排版-" + stamp());
   }
   function downloadSingle(fmt){
     if(!srcImg){ toast("请先上传照片"); return; }
-    var mime = fmt === "jpg" ? "image/jpeg" : "image/png";
-    var ext  = fmt === "jpg" ? "jpg" : "png";
-    exportCanvas(cropCanvas, mime, ext,
-      "证件照" + currentSpec().mmw + "x" + currentSpec().mmh + "mm-" + cropCanvas.width + "x" + cropCanvas.height + "-" + stamp() + "." + ext);
+    var s = currentSpec();
+    exportCanvas(cropCanvas, fmt, "证件照" + s.mmw + "x" + s.mmh + "mm-" + cropCanvas.width + "x" + cropCanvas.height + "-" + stamp());
   }
-  btnDlSheetPng.addEventListener("click", function(){ downloadSheet("png"); });
   btnDlSheetJpg.addEventListener("click", function(){ downloadSheet("jpg"); });
-  btnDlSinglePng.addEventListener("click", function(){ downloadSingle("png"); });
+  btnDlSheetPng.addEventListener("click", function(){ downloadSheet("png"); });
+  btnDlSheetTiff.addEventListener("click", function(){ downloadSheet("tiff"); });
+  btnDlSheetBmp.addEventListener("click", function(){ downloadSheet("bmp"); });
   btnDlSingleJpg.addEventListener("click", function(){ downloadSingle("jpg"); });
+  btnDlSinglePng.addEventListener("click", function(){ downloadSingle("png"); });
+  btnDlSingleTiff.addEventListener("click", function(){ downloadSingle("tiff"); });
+  btnDlSingleBmp.addEventListener("click", function(){ downloadSingle("bmp"); });
 
   /* ---------- 重置 ---------- */
   resetBtn.addEventListener("click", function(){
     srcImg = null; photoInput.value = "";
     uploadBox.classList.remove("has-img");
-    uploadBox.innerHTML = '点击选择或拖入照片<br><small style="color:var(--muted)">支持 jpg / png / webp，建议正面免冠照</small>';
-    [btnDlSheetPng, btnDlSheetJpg, btnDlSinglePng, btnDlSingleJpg].forEach(function(b){ b.disabled = true; });
+    uploadBox.innerHTML = "点击选择或拖入照片";
+    setDlEnabled(false);
     [cropCanvas, sheetCanvas, interactCanvas].forEach(function(c){ c.width = 0; c.height = 0; });
     singleStat.textContent = ""; sheetStat.textContent = "";
     qualityWarn.classList.add("hidden");
