@@ -169,9 +169,9 @@
   <div class="card">
     <div class="step-h"><i class="tool-num">1</i>上传照片</div>
     <div class="upload-box" id="uploadBox">
-      点击选择或拖入照片<br><small style="color:var(--muted)">支持 jpg / png / webp，建议正面免冠照</small>
+      点击选择或拖入照片<br><small style="color:var(--muted)">支持 jpg / png / webp，以及 CR2 等相机 RAW（自动转 sRGB，不发暗）</small>
     </div>
-    <input type="file" id="photoInput" accept="image/png,image/jpeg,image/webp">
+    <input type="file" id="photoInput" accept="image/png,image/jpeg,image/webp,.cr2,.cr3,.nef,.nrw,.arw,.dng,.raf,.orf,.rw2,.pef,.srw,.iii,.mos,.erf,.kdc,.dcr,.mrw">
   </div>
 
   <!-- 步骤 2：选尺寸 -->
@@ -652,8 +652,15 @@
     if(photoInput.files[0]) loadFile(photoInput.files[0]);
     photoInput.value = "";
   });
+  var RAW_EXT = /\.(cr2|cr3|nef|nrw|arw|dng|raf|orf|rw2|pef|srw|iii|mos|erf|kdc|dcr|mrw|rwz|sr2)$/i;
+
   function loadFile(file){
-    if(!/^image\//.test(file.type)){ toast("请选择 jpg / png / webp 图片"); return; }
+    var name = (file && file.name ? file.name : "").toLowerCase();
+    if(RAW_EXT.test(name)){
+      decodeRaw(file);
+      return;
+    }
+    if(!/^image\//.test(file.type)){ toast("请选择 jpg / png / webp 图片，或 CR2 等相机 RAW"); return; }
     var fr = new FileReader();
     fr.onload = function(){
       var img = new Image();
@@ -683,6 +690,99 @@
       img.src = fr.result;
     };
     fr.readAsDataURL(file);
+  }
+
+  /* ---------- RAW（CR2 等）解码 ---------- */
+  function withTimeout(p, ms, msg){
+    return Promise.race([
+      p,
+      new Promise(function(_, rej){ setTimeout(function(){ rej(new Error(msg)); }, ms); })
+    ]);
+  }
+  // RAW 本质是拜耳马赛克 + 线性数据，必须走 LibRaw 的 dcraw_process
+  // （去黑电平 → 白平衡 → 反马赛克 → 线性转 sRGB 伽马）才能正常显示，
+  // 直接当 RGB 截就会发黑——这一步就是补上 PS 打开 CR2 时自动做的那套处理。
+  async function decodeRaw(file){
+    if(!file || !file.size){ toast("文件为空，无法解码"); return; }
+    toast("正在加载 RAW 解码库…");
+    var LibRawMod;
+    try {
+      LibRawMod = await import("./libraw/index.js");
+    } catch(err){
+      toast("RAW 解码库加载失败：请通过 https（线上地址）打开本页，或先将相机文件导出为 JPG/PNG");
+      return;
+    }
+    toast("正在解码 " + file.name + " …");
+    var raw = null;
+    try {
+      var buf = await file.arrayBuffer();
+      var LibRaw = LibRawMod.default;
+      raw = new LibRaw();
+      var img = await withTimeout(
+        (async function(){
+          await raw.open(new Uint8Array(buf), { useCameraWb:true, outputColor:1, outputBps:8 });
+          return raw.imageData();
+        })(),
+        30000, "解码超时（文件可能过大或格式不受支持）"
+      );
+      var imageData = rawToImageData(img);
+      var W = imageData.width, H = imageData.height;
+      var c;
+      if(W * H > MAX_PIXELS){
+        var k = Math.sqrt(MAX_PIXELS / (W*H));
+        c = newCanvas(Math.round(W*k), Math.round(H*k));
+        putImageDataScaled(c.getContext("2d"), imageData, c.width, c.height);
+        toast("原图较大，已缩至 " + c.width + " × " + c.height + " 处理");
+      } else {
+        c = newCanvas(W, H);
+        c.getContext("2d").putImageData(imageData, 0, 0);
+      }
+      srcImg = c;
+      state.wholeRot = 0;
+      state.rot = 0; rotSlider.value = 0; rotVal.textContent = "0°";
+      uploadBox.classList.add("has-img");
+      uploadBox.innerHTML = "已选择照片，可点击更换<br><small>" + file.name + " · " + W + " × " + H + "px（RAW 已转 sRGB）</small>";
+      [btnDlSheetPng, btnDlSheetJpg, btnDlSinglePng, btnDlSingleJpg].forEach(function(b){ b.disabled = false; });
+      fitCrop();
+    } catch(err){
+      toast("RAW 解码失败：" + (err && err.message ? err.message : err) + "（可先用相机/PS 导出 JPG/PNG 再上传）");
+    } finally {
+      try { if(raw) raw.dispose(); } catch(e){}
+    }
+  }
+
+  function rawToImageData(img){
+    if(!img || !img.data || !img.width || !img.height){
+      throw new Error("解码未返回有效图像数据");
+    }
+    var w = img.width, h = img.height;
+    var colors = (img.colors >= 1 && img.colors <= 4) ? img.colors : 3;
+    var bits = img.bits || 8;
+    var src = img.data;
+    var out = new Uint8ClampedArray(w * h * 4);
+    var npix = w * h;
+    for(var p = 0; p < npix; p++){
+      var si = p * colors, oi = p * 4;
+      if(bits === 16){
+        out[oi]   = src[si] >> 8;
+        out[oi+1] = colors > 1 ? (src[si+1] >> 8) : out[oi];
+        out[oi+2] = colors > 2 ? (src[si+2] >> 8) : out[oi];
+      } else {
+        out[oi]   = src[si];
+        out[oi+1] = colors > 1 ? src[si+1] : src[si];
+        out[oi+2] = colors > 2 ? src[si+2] : src[si];
+      }
+      out[oi+3] = 255;
+    }
+    return new ImageData(out, w, h);
+  }
+
+  function putImageDataScaled(ctx, imageData, dw, dh){
+    var t = newCanvas(imageData.width, imageData.height);
+    t.getContext("2d").putImageData(imageData, 0, 0);
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = "high";
+    ctx.drawImage(t, 0, 0, dw, dh);
   }
 
   /* ---------- 控件事件 ---------- */
